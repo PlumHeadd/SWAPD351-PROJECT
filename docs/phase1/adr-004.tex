@@ -1,0 +1,31 @@
+% ADR-004: Message Broker Selection
+\subsection{ADR-004: RabbitMQ as Message Broker}
+
+\begin{tabular}{p{3cm}p{10cm}}
+\textbf{Status} & Accepted \\
+\textbf{Date} & 2026-03-15 \\
+\textbf{Decision} & Use RabbitMQ for asynchronous inter-service communication. \\
+\end{tabular}
+
+\textbf{Context}: The Event Service needs to notify the Notification Service when events are created, updated, or when users RSVP. Similarly, the Chat Service triggers notification alerts. These operations are side-effects and should not block the primary request-response cycle.
+
+\textbf{Decision}: Adopt RabbitMQ with durable queues and topic exchanges. Producers publish messages to exchanges, and consumers bind queues to receive specific message types.
+
+\textbf{Queue Design}:
+\begin{itemize}
+    \item Exchange: \texttt{eventify.events} (topic exchange)
+    \item Routing keys: \texttt{event.created}, \texttt{event.updated}, \texttt{event.deleted}, \texttt{rsvp.created}, \texttt{rsvp.cancelled}, \texttt{chat.message}
+    \item Consumer queues: \texttt{notification-queue} (binds to all routing keys)
+\end{itemize}
+
+\textbf{Consequences}:
+\begin{itemize}
+    \item \textit{Positive}: Decouples producers from consumers. Durable queues ensure message delivery even if a consumer is temporarily down. Topic-based routing allows flexible message filtering.
+    \item \textit{Negative}: Adds infrastructure complexity. Message ordering is guaranteed only within a single queue. Requires monitoring for queue depth and consumer lag.
+\end{itemize}
+
+\textbf{Alternatives Considered}:
+\begin{itemize}
+    \item Apache Kafka --- better for high-throughput event streaming, but overkill for our notification use case. RabbitMQ's simpler routing model is sufficient.
+    \item Redis Pub/Sub --- does not persist messages if the subscriber is offline. Not suitable for reliable notification delivery.
+\end{itemize}

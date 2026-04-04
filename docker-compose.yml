@@ -1,0 +1,220 @@
+version: '3.8'
+
+services:
+  # --- API Gateway ---
+  api-gateway:
+    build: ./services/api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - USER_SERVICE_URL=http://user-service:3001
+      - EVENT_SERVICE_URL=http://event-service:5001
+      - CHAT_SERVICE_URL=http://chat-service:3002
+      - NOTIFICATION_SERVICE_URL=http://notification-service:5002
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=eventify_jwt_secret_key_2026
+    depends_on:
+      - redis
+      - user-service
+      - event-service
+    networks:
+      - eventify-net
+
+  # --- User Service (Node.js) ---
+  user-service:
+    build: ./services/user-service
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - DATABASE_URL=postgresql://eventify:eventify123@postgres:5432/eventify_users
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=eventify_jwt_secret_key_2026
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-placeholder}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-placeholder}
+      - GOOGLE_CALLBACK_URL=http://localhost:3000/api/auth/google/callback
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - eventify-net
+
+  # --- Event Service (Python/Flask) ---
+  event-service:
+    build: ./services/event-service
+    ports:
+      - "5001:5001"
+    environment:
+      - PORT=5001
+      - MONGO_URI=mongodb://mongodb:27017/eventify_events
+      - REDIS_URL=redis://redis:6379
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - JWT_SECRET=eventify_jwt_secret_key_2026
+    depends_on:
+      - mongodb
+      - redis
+      - rabbitmq
+    networks:
+      - eventify-net
+
+  # --- Chat Service (Node.js/Socket.io) ---
+  chat-service:
+    build: ./services/chat-service
+    ports:
+      - "3002:3002"
+    environment:
+      - PORT=3002
+      - MONGO_URI=mongodb://mongodb:27017/eventify_chat
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - JWT_SECRET=eventify_jwt_secret_key_2026
+    depends_on:
+      - mongodb
+      - rabbitmq
+    networks:
+      - eventify-net
+
+  # --- Notification Service (Python/Flask) ---
+  notification-service:
+    build: ./services/notification-service
+    ports:
+      - "5002:5002"
+    environment:
+      - PORT=5002
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - REDIS_URL=redis://redis:6379
+      - USER_SERVICE_URL=http://user-service:3001
+      - SMTP_HOST=${SMTP_HOST:-localhost}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+    depends_on:
+      - rabbitmq
+      - redis
+      - user-service
+    networks:
+      - eventify-net
+
+  # --- Frontend (React) ---
+  frontend:
+    build: ./frontend
+    ports:
+      - "3080:80"
+    depends_on:
+      - api-gateway
+    networks:
+      - eventify-net
+
+  # ============ INFRASTRUCTURE ============
+
+  # --- PostgreSQL ---
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=eventify
+      - POSTGRES_PASSWORD=eventify123
+      - POSTGRES_DB=eventify_users
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - eventify-net
+
+  # --- MongoDB ---
+  mongodb:
+    image: mongo:7
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "27017:27017"
+    networks:
+      - eventify-net
+
+  # --- Redis ---
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - eventify-net
+
+  # --- RabbitMQ ---
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - eventify-net
+
+  # --- OpenSearch (Logging) ---
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - eventify-net
+
+  # --- OpenSearch Dashboards ---
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.11.0
+    ports:
+      - "5601:5601"
+    environment:
+      - 'OPENSEARCH_HOSTS=["http://opensearch:9200"]'
+      - "DISABLE_SECURITY_DASHBOARDS_PLUGIN=true"
+    depends_on:
+      - opensearch
+    networks:
+      - eventify-net
+
+  # --- Prometheus ---
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - eventify-net
+
+  # --- Grafana ---
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3030:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+    depends_on:
+      - prometheus
+    networks:
+      - eventify-net
+
+volumes:
+  postgres_data:
+  mongo_data:
+  redis_data:
+  rabbitmq_data:
+  opensearch_data:
+  grafana_data:
+
+networks:
+  eventify-net:
+    driver: bridge

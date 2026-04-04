@@ -1,0 +1,28 @@
+% ADR-002: Database Selection
+\subsection{ADR-002: Database Selection -- PostgreSQL and MongoDB}
+
+\begin{tabular}{p{3cm}p{10cm}}
+\textbf{Status} & Accepted \\
+\textbf{Date} & 2026-03-15 \\
+\textbf{Decision} & Use PostgreSQL for user data and MongoDB for event/chat data. \\
+\end{tabular}
+
+\textbf{Context}: The system handles two fundamentally different data patterns. User data (accounts, credentials, OAuth tokens) is relational, requires strong consistency, and benefits from ACID transactions. Event data (events with varying attributes, RSVPs, chat messages) is document-oriented, with flexible schemas and high write throughput requirements.
+
+\textbf{Decision}: Adopt a polyglot persistence strategy:
+\begin{itemize}
+    \item \textbf{PostgreSQL} for the User Service: stores user profiles, OAuth tokens, and session metadata. Supports sharding via the Citus extension for horizontal scaling.
+    \item \textbf{MongoDB} for the Event Service and Chat Service: stores events, RSVPs, and chat messages. MongoDB's document model naturally maps to event objects with nested attendee lists. Native sharding support enables horizontal scaling by event ID or date range.
+\end{itemize}
+
+\textbf{Consequences}:
+\begin{itemize}
+    \item \textit{Positive}: Each database is optimized for its workload. PostgreSQL guarantees consistency for user operations. MongoDB handles high-throughput writes for chat and flexible event schemas.
+    \item \textit{Negative}: Operational overhead of managing two database technologies. Cross-database joins are not possible; data must be denormalized or fetched via API calls.
+\end{itemize}
+
+\textbf{Sharding Considerations}:
+\begin{itemize}
+    \item PostgreSQL: Shard by user ID using Citus distributed tables.
+    \item MongoDB: Shard events collection by \texttt{event\_id} (hashed) for even distribution. Shard chat messages by \texttt{event\_id} to co-locate messages for the same event.
+\end{itemize}

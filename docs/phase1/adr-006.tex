@@ -1,0 +1,22 @@
+% ADR-006: Multi-Language Microservices
+\subsection{ADR-006: Multi-Language Service Implementation}
+
+\begin{tabular}{p{3cm}p{10cm}}
+\textbf{Status} & Accepted \\
+\textbf{Date} & 2026-03-15 \\
+\textbf{Decision} & Implement services in both Node.js and Python based on domain requirements. \\
+\end{tabular}
+
+\textbf{Context}: The project description states that not all microservices need to be implemented in the same programming language, and the language choices should be justified in the ADR. Different services have different runtime characteristics that favor different languages.
+
+\textbf{Decision}:
+\begin{itemize}
+    \item \textbf{Node.js (JavaScript)}: Used for the API Gateway, User Service, and Chat Service. Node.js excels at I/O-bound operations and has native support for WebSockets via Socket.io. Passport.js provides a mature OAuth2 integration for the User Service. The event-driven, non-blocking architecture is ideal for handling many concurrent WebSocket connections in the Chat Service.
+    \item \textbf{Python (Flask)}: Used for the Event Service and Notification Service. Python offers concise syntax for CRUD operations and data validation with libraries like Marshmallow. The team has strong familiarity with Python. Flask's simplicity allows rapid development of RESTful APIs without unnecessary abstraction.
+\end{itemize}
+
+\textbf{Consequences}:
+\begin{itemize}
+    \item \textit{Positive}: Each service uses the language best suited to its workload. Team members can work in their strongest language. Demonstrates polyglot microservices as required.
+    \item \textit{Negative}: Requires maintaining build tooling and dependency management for two ecosystems (npm and pip). Shared libraries or utilities cannot be easily reused across languages.
+\end{itemize}

@@ -1,0 +1,24 @@
+% ADR-001: Microservices Architecture
+\subsection{ADR-001: Adoption of Microservices Architecture}
+
+\begin{tabular}{p{3cm}p{10cm}}
+\textbf{Status} & Accepted \\
+\textbf{Date} & 2026-03-15 \\
+\textbf{Decision} & Adopt a microservices architecture over a monolithic architecture. \\
+\end{tabular}
+
+\textbf{Context}: The Eventify platform comprises distinct domains: user management, event management, real-time chat, and notifications. These domains have different scaling characteristics. Event browsing may experience high read traffic, while chat requires persistent WebSocket connections. A monolithic application would force all domains to scale together, wasting resources.
+
+\textbf{Decision}: Decompose the system into five independently deployable microservices: API Gateway, User Service, Event Service, Chat Service, and Notification Service. Each service owns its data and communicates via REST (synchronous) or RabbitMQ (asynchronous).
+
+\textbf{Consequences}:
+\begin{itemize}
+    \item \textit{Positive}: Independent scaling, independent deployment, technology flexibility per service, fault isolation.
+    \item \textit{Negative}: Increased operational complexity, network latency between services, eventual consistency challenges, need for distributed tracing.
+\end{itemize}
+
+\textbf{Alternatives Considered}:
+\begin{itemize}
+    \item Monolithic architecture --- simpler to develop initially but does not meet scalability and independent deployment requirements.
+    \item Service-oriented architecture (SOA) --- heavier governance and shared data layer; microservices provide better autonomy.
+\end{itemize}

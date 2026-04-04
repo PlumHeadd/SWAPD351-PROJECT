@@ -1,0 +1,202 @@
+openapi: 3.0.3
+info:
+  title: Eventify - User Service API
+  description: RESTful API for user authentication (Google OAuth2) and profile management
+  version: 1.0.0
+  contact:
+    name: Eventify Team
+servers:
+  - url: http://localhost:3000/api
+    description: Development server (via API Gateway)
+
+paths:
+  /auth/google:
+    get:
+      summary: Initiate Google OAuth2 login
+      description: Redirects the user to Google's consent screen for OAuth2 authorization
+      tags: [Authentication]
+      responses:
+        '302':
+          description: Redirect to Google OAuth2 consent screen
+
+  /auth/google/callback:
+    get:
+      summary: Google OAuth2 callback
+      description: Handles the callback from Google after user authorization. Issues JWT access and refresh tokens.
+      tags: [Authentication]
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Authentication failed
+
+  /auth/refresh:
+    post:
+      summary: Refresh JWT token
+      description: Exchange a valid refresh token for a new access token
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid refresh token
+
+  /auth/logout:
+    post:
+      summary: Logout user
+      description: Invalidates the refresh token
+      tags: [Authentication]
+      security:
+        - BearerAuth: []
+      responses:
+        '204':
+          description: Logged out
+
+  /users/me:
+    get:
+      summary: Get current user profile
+      tags: [Users]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+    put:
+      summary: Update current user profile
+      tags: [Users]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdate'
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+
+  /users/{id}:
+    get:
+      summary: Get user by ID
+      tags: [Users]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPublic'
+        '404':
+          description: User not found
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    AuthResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        token_type:
+          type: string
+          default: Bearer
+        expires_in:
+          type: integer
+          description: Token expiry in seconds
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        avatar_url:
+          type: string
+          format: uri
+        bio:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    UserPublic:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        avatar_url:
+          type: string
+          format: uri
+        bio:
+          type: string
+
+    UserUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        bio:
+          type: string
+          maxLength: 500

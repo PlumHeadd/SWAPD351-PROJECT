@@ -1,0 +1,25 @@
+% ADR-003: Authentication Method
+\subsection{ADR-003: OAuth2 via Google with JWT Tokens}
+
+\begin{tabular}{p{3cm}p{10cm}}
+\textbf{Status} & Accepted \\
+\textbf{Date} & 2026-03-15 \\
+\textbf{Decision} & Use Google OAuth2 for user authentication and JWT tokens for session management. \\
+\end{tabular}
+
+\textbf{Context}: The project requires token-based authentication with OAuth2 via Google as the primary provider. In a microservices architecture, session state must be shareable across services without a centralized session store bottleneck.
+
+\textbf{Decision}: Implement the OAuth2 Authorization Code flow with Google as the identity provider. Upon successful authentication, the User Service issues a signed JWT containing the user's ID and roles. Subsequent requests include this JWT in the Authorization header. The API Gateway validates the JWT signature before routing requests to backend services.
+
+\textbf{Token Strategy}:
+\begin{itemize}
+    \item Access Token: JWT with 15-minute expiry, signed with RS256.
+    \item Refresh Token: Opaque token stored in Redis with 7-day expiry.
+    \item Token refresh is handled by the User Service via the \texttt{/api/auth/refresh} endpoint.
+\end{itemize}
+
+\textbf{Consequences}:
+\begin{itemize}
+    \item \textit{Positive}: Stateless authentication at the API Gateway (no database lookup per request). Users benefit from Google's security infrastructure. JWTs are self-contained and can be verified by any service.
+    \item \textit{Negative}: JWT revocation is not immediate (must wait for expiry or maintain a blacklist in Redis). Dependency on Google's OAuth2 service availability.
+\end{itemize}
