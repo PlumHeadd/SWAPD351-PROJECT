@@ -1,0 +1,42 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - 'alert-rules.yml'
+
+scrape_configs:
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['api-gateway:3000']
+    metrics_path: /metrics
+
+  - job_name: 'user-service'
+    static_configs:
+      - targets: ['user-service:3001']
+    metrics_path: /metrics
+
+  - job_name: 'event-service'
+    static_configs:
+      - targets: ['event-service:5001']
+    metrics_path: /metrics
+
+  - job_name: 'chat-service'
+    static_configs:
+      - targets: ['chat-service:3002']
+    metrics_path: /metrics
+
+  - job_name: 'notification-service'
+    static_configs:
+      - targets: ['notification-service:5002']
+    metrics_path: /metrics
+  
+  # Host-level metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+  
+  # Container-level metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']  # Internal Docker port remains 8080
