@@ -1,0 +1,311 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in, headheight=14pt]{geometry}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{float}
+\usepackage{parskip}
+
+\definecolor{zewailblue}{RGB}{0,51,102}
+\definecolor{linkblue}{RGB}{0,102,204}
+
+\hypersetup{colorlinks=true, linkcolor=zewailblue, urlcolor=linkblue}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small SWAPD 351 -- Software Architecture and Design}
+\fancyhead[R]{\small Eventify Platform -- Phase 2}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\titleformat{\section}{\Large\bfseries\color{zewailblue}}{}{0em}{}[\titlerule]
+\titleformat{\subsection}{\large\bfseries\color{zewailblue}}{}{0em}{}
+
+\lstset{basicstyle=\ttfamily\small, frame=single, breaklines=true, backgroundcolor=\color{gray!5}}
+
+\begin{document}
+
+% ---- TITLE PAGE ----
+\begin{titlepage}
+\centering
+\vspace*{1cm}
+{\Huge\bfseries\color{zewailblue} Eventify Platform}\\[0.5cm]
+{\Large Phase 2 -- Final Implementation Report}\\[0.3cm]
+{\large Final Submission}
+\vspace{1.5cm}
+
+{\large\textbf{SWAPD 351 -- Software Architecture and Design}}\\[0.3cm]
+{\large Spring 2026}
+\vspace{2cm}
+
+{\large\textbf{Team Members}}\\[0.5cm]
+\begin{tabular}{l}
+Habiba Magdy \\
+Basmala Salah \\
+Arwa Mohamed \\
+Lana Mohamed \\
+\end{tabular}
+\vspace{2cm}
+
+{\large Zewail City of Science and Technology}\\[0.3cm]
+{\large University of Science and Technology}
+\vfill
+{\small Document Version 1.0 --- \today}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ======================================================================
+% 1. UPDATED DESIGN DOCUMENT
+% Rubric: Revised C4 Model, Deployment model (load balancers, failover,
+%         scaling), Additional ADRs
+% ======================================================================
+\section{Updated Design Document}
+
+\subsection{Revised C4 Model}
+
+The C4 model presented in Phase 1 was implemented without structural deviations. The system comprises five microservices (API Gateway, User Service, Event Service, Chat Service, Notification Service) communicating through REST and RabbitMQ, backed by PostgreSQL, MongoDB, and Redis. The Context, Container, and Component diagrams from Phase 1 accurately reflect the deployed system. No changes to the architectural decomposition were necessary during implementation.
+
+\subsection{Deployment Model}
+
+The system is deployed using Docker Compose, orchestrating 14 containers on a single host.
+
+\textbf{Load Balancing}: The API Gateway acts as the single entry point for all client traffic. It distributes incoming requests to the appropriate backend services via HTTP reverse proxy. Nginx serves the React frontend and proxies \texttt{/api/*} requests to the API Gateway, providing an additional layer of request distribution.
+
+\textbf{Failover Mechanisms}: Circuit breakers protect all inter-service calls. The Event Service uses \texttt{pybreaker} to wrap calls to Redis and RabbitMQ; if either dependency becomes unavailable, the service degrades gracefully (serves uncached responses, skips notifications) rather than failing entirely. Node.js services use \texttt{opossum} for the same purpose. RabbitMQ persists messages in durable queues with manual acknowledgment, ensuring that notifications are delivered even if the Notification Service is temporarily down. The User Service implements a startup retry loop (15 attempts, 3-second intervals) to handle database initialization timing.
+
+\textbf{Scaling Considerations}: Each microservice is stateless and can be horizontally scaled via Docker Compose \texttt{replicas} or migration to Kubernetes. MongoDB supports horizontal sharding by \texttt{event\_id} for distributing event data across nodes. PostgreSQL supports sharding via the Citus extension for user data distribution. Redis externalizes session state and caching, allowing any service instance to serve any request without affinity.
+
+\subsection{Additional ADRs}
+
+No additional ADRs were required during implementation. All six decisions from Phase 1 (microservices architecture, polyglot databases, OAuth2/JWT authentication, RabbitMQ message broker, Redis caching, multi-language services) were implemented as specified.
+
+\newpage
+
+% ======================================================================
+% 2. IMPLEMENTED WEB APPLICATION
+% Rubric: Codebase (clean architecture), Docker/Compose, CRUD + API Gateway,
+%         caching (Redis), message broker (Kafka/RabbitMQ), centralized logging,
+%         frontend (React/Vue/Angular) with OAuth2
+% ======================================================================
+\section{Implemented Web Application}
+
+\subsection{Backend Services}
+
+Five microservices were implemented, each following clean architecture with clear separation between controllers, service logic, and data access layers. Each service owns its data store and exposes a RESTful interface.
+
+\begin{longtable}{@{}p{3.5cm}p{2.5cm}p{7.5cm}@{}}
+\toprule
+\textbf{Service} & \textbf{Language} & \textbf{Responsibilities} \\
+\midrule
+API Gateway & Node.js & Request routing via reverse proxy, JWT token validation, rate limiting (100 requests/min per IP), Prometheus metrics exposure \\
+\midrule
+User Service & Node.js & Google OAuth2 via Passport.js, JWT issuance (HS256, 15-min expiry), refresh token management in Redis, user profile CRUD, PostgreSQL storage \\
+\midrule
+Event Service & Python/Flask & Event and RSVP CRUD, MongoDB storage, Redis response caching (5-min TTL) with write-through invalidation, RabbitMQ event publishing, circuit breaker protection via pybreaker \\
+\midrule
+Chat Service & Node.js & Real-time WebSocket messaging via Socket.io, JWT-authenticated connections, per-event chat rooms, MongoDB message persistence, RabbitMQ notification publishing \\
+\midrule
+Notification Service & Python/Flask & RabbitMQ consumer on durable queue, per-user notification storage in Redis, SMTP email delivery (Gmail) triggered on event creation, updates, and RSVPs \\
+\bottomrule
+\end{longtable}
+
+\subsection{Containerization (Docker + Docker Compose)}
+
+All services are containerized with individual Dockerfiles and orchestrated via a single \texttt{docker-compose.yml} defining 14 containers: 5 application services, 1 frontend, and 8 infrastructure components (PostgreSQL, MongoDB, Redis, RabbitMQ, OpenSearch, OpenSearch Dashboards, Prometheus, Grafana).
+
+\subsection{CRUD Functionality with API Gateway}
+
+The API Gateway proxies all client requests to backend services without consuming request bodies, preserving raw streams for downstream processing. The Event Service implements full CRUD:
+
+\begin{itemize}
+    \item \textbf{Create}: \texttt{POST /api/events} --- validates input, inserts into MongoDB, publishes \texttt{event.created} to RabbitMQ, invalidates Redis cache, triggers email notification to creator.
+    \item \textbf{Read}: \texttt{GET /api/events} --- paginated listing with search and category filtering, served from Redis cache when available. \texttt{GET /api/events/\{id\}} --- single event detail with caching.
+    \item \textbf{Update}: \texttt{PUT /api/events/\{id\}} --- restricted to event creator, publishes \texttt{event.updated}, invalidates cache, triggers email.
+    \item \textbf{Delete}: \texttt{DELETE /api/events/\{id\}} --- restricted to creator, removes associated RSVPs, publishes \texttt{event.deleted}, invalidates cache.
+    \item \textbf{RSVP}: \texttt{POST /api/events/\{id\}/rsvp} --- enforces capacity, increments attendee count atomically, publishes \texttt{rsvp.created}, triggers email to user.
+\end{itemize}
+
+\subsection{Caching (Redis)}
+
+Redis serves three functions: (1) response caching for event listings and details with 5-minute TTL and write-through invalidation on mutations; (2) session management storing refresh tokens with 7-day TTL keyed by user ID; (3) notification storage maintaining per-user queues capped at 100 entries.
+
+\subsection{Message Broker (RabbitMQ)}
+
+Asynchronous inter-service communication uses a RabbitMQ topic exchange (\texttt{eventify.events}) with durable queues and persistent message delivery. The Event Service and Chat Service publish messages with routing keys (\texttt{event.created}, \texttt{event.updated}, \texttt{event.deleted}, \texttt{rsvp.created}, \texttt{rsvp.cancelled}, \texttt{chat.message}). The Notification Service consumes from a durable queue bound to \texttt{event.*}, \texttt{rsvp.*}, and \texttt{chat.*}, processing messages with manual acknowledgment to guarantee at-least-once delivery.
+
+\subsection{Centralized Logging (OpenSearch)}
+
+OpenSearch 2.11 is deployed as a single-node cluster for centralized log aggregation. OpenSearch Dashboards provides a web interface for log querying and visualization. All services produce structured logs that can be forwarded to OpenSearch for unified search and analysis.
+
+\subsection{Frontend (React with OAuth2)}
+
+A single-page React application built with Bootstrap 5 provides six views: Google OAuth2 login with automatic post-authentication redirect, event browsing with search and category filters, event creation form with field validation, event detail page with role-based actions (RSVP for attendees, delete for creators, chat access for both), real-time WebSocket chat scoped per event, and a live dashboard with 5-second auto-refresh showing total events, total RSVPs, and trending events.
+
+\newpage
+
+% ======================================================================
+% 3. SECURITY IMPLEMENTATION
+% Rubric: OAuth2 authentication, Secure API (rate limiting, HTTPS, JWT)
+% ======================================================================
+\section{Security Implementation}
+
+\subsection{OAuth2 Authentication (Google)}
+
+Authentication uses the OAuth2 Authorization Code flow with Google as the identity provider, implemented via Passport.js. On successful authentication, the User Service creates or retrieves the user in PostgreSQL and issues a signed JWT. The callback redirects the authenticated user to the frontend, which stores the token in \texttt{localStorage} for subsequent API calls.
+
+\subsection{Secure API Implementation}
+
+\begin{itemize}
+    \item \textbf{Rate Limiting}: 100 requests per minute per IP via \texttt{express-rate-limit} at the API Gateway.
+    \item \textbf{JWT Tokens}: HS256-signed, 15-minute expiry. The API Gateway validates signatures and injects \texttt{x-user-id} headers for downstream authorization.
+    \item \textbf{Security Headers}: Helmet.js applies \texttt{X-Content-Type-Options}, \texttt{X-Frame-Options}, \texttt{Strict-Transport-Security}, and \texttt{X-XSS-Protection}.
+    \item \textbf{Authorization}: Write operations on events are restricted to the creator. RSVP operations require a valid JWT. The Notification Service resolves user emails via internal API calls, never exposing credentials to clients.
+\end{itemize}
+
+\newpage
+
+% ======================================================================
+% 4. TESTING AND QUALITY ASSURANCE
+% Rubric: Integration tests (API, service interactions, DB queries),
+%         Unit tests (80%+ coverage), Load/stress testing (k6/JMeter),
+%         Contract testing
+% ======================================================================
+\section{Testing and Quality Assurance}
+
+\subsection{Integration Tests}
+
+Nine integration tests verify end-to-end behavior across all running services:
+
+\begin{longtable}{@{}p{5.5cm}p{8cm}@{}}
+\toprule
+\textbf{Test} & \textbf{Verification} \\
+\midrule
+API Gateway health & Returns 200 with correct service identifier \\
+Event Service via Gateway & Proxy forwards requests and returns valid response \\
+List events & Returns paginated response with expected schema \\
+Create event (unauthorized) & Correctly rejects with 401 when no JWT provided \\
+Get nonexistent event & Returns 404 for invalid ObjectId \\
+Event stats & Returns aggregate counts and trending list \\
+Events list contract & Schema: \texttt{events} (array), \texttt{total} (int), \texttt{page} (int) \\
+Stats contract & Schema: \texttt{total\_events}, \texttt{total\_rsvps}, \texttt{trending\_events} (array) \\
+Health contract & Schema: \texttt{status} (string), \texttt{service} (string) \\
+\bottomrule
+\end{longtable}
+
+\textbf{Result}: 9/9 tests passed.
+
+\subsection{Unit Tests}
+
+Unit tests cover core business logic with mocked external dependencies:
+
+\begin{itemize}
+    \item \textbf{Event Service}: 10 tests covering health, event listing, creation (with/without auth, missing fields, success), retrieval (not found, invalid ID), RSVP (no auth, not found, duplicate), and statistics.
+    \item \textbf{API Gateway}: 4 tests covering health, Prometheus metrics, JWT pass-through, and rate limiting.
+    \item \textbf{Notification Service}: 3 tests covering health, notification retrieval, and metrics.
+\end{itemize}
+
+\subsection{Load and Stress Testing (k6)}
+
+A k6 load test simulates progressive concurrency: ramp to 20 users (30s), sustain 50 users (60s), spike to 100 users (30s), ramp down (30s). Thresholds: 95th percentile response time under 500ms, error rate below 5\%. The test targets the health, event listing, and statistics endpoints through the API Gateway.
+
+\subsection{Contract Testing}
+
+Three contract tests validate that API response schemas match the structures defined in the OpenAPI specifications, ensuring that independently developed services remain compatible at their interfaces.
+
+\newpage
+
+% ======================================================================
+% 5. DEPLOYMENT, MONITORING, AND OBSERVABILITY
+% Rubric: Logging (OpenSearch/Loki/Azure), Application and system monitoring
+%         (Grafana/Azure), Configured alerts
+% ======================================================================
+\section{Deployment, Monitoring, and Observability}
+
+\subsection{Logging (OpenSearch)}
+
+OpenSearch 2.11 provides centralized log storage with full-text search capabilities. OpenSearch Dashboards (port 5601) offers a web interface for log exploration, filtering, and visualization. The cluster operates in single-node mode with security plugins disabled for development. Cluster health was verified as \texttt{green} with one active node.
+
+\subsection{Application and System Monitoring (Prometheus + Grafana)}
+
+Prometheus scrapes \texttt{/metrics} endpoints from all five application services at 15-second intervals. Each service exposes both default runtime metrics (memory, CPU, event loop latency for Node.js; process metrics for Python) and custom application counters (\texttt{http\_requests\_total} labeled by method, route, and status code; \texttt{event\_service\_requests\_total}; \texttt{notifications\_sent\_total} by type). All five scrape targets were confirmed \texttt{up} during verification.
+
+Grafana is pre-configured with Prometheus as its default data source via provisioning files. It provides dashboards for request rates, error rates, response latencies, and resource utilization across all services.
+
+\subsection{Configured Alerts}
+
+Alerting is configured through Prometheus rules and RabbitMQ's built-in monitoring:
+\begin{itemize}
+    \item \textbf{Service availability}: Prometheus alerts when any scrape target transitions to \texttt{down}.
+    \item \textbf{Error rate}: Alerts when 5xx responses exceed a configurable threshold per service.
+    \item \textbf{Queue backlog}: RabbitMQ Management UI monitors queue depth, consumer count, and message rates. Alerts trigger when the notification queue accumulates unprocessed messages beyond a threshold.
+\end{itemize}
+
+\newpage
+
+% ======================================================================
+% 6. FINAL REPORT
+% Rubric: Summary of architecture and trade-offs, Challenges faced and
+%         solutions, Performance evaluation results
+% ======================================================================
+\section{Final Report}
+
+\subsection{Summary of System Architecture and Trade-offs}
+
+Eventify separates concerns across five microservices by domain: user identity, event management, real-time communication, and notification delivery. Synchronous REST handles user-facing operations requiring immediate feedback. Asynchronous messaging via RabbitMQ decouples notification side-effects from the request path, improving resilience and user-perceived latency.
+
+\begin{longtable}{@{}p{4cm}p{4.5cm}p{4.5cm}@{}}
+\toprule
+\textbf{Decision} & \textbf{Benefit} & \textbf{Cost} \\
+\midrule
+Microservices & Independent scaling, fault isolation, polyglot flexibility & Operational complexity, inter-service latency, distributed tracing overhead \\
+\midrule
+Polyglot persistence & Each database optimized for its workload & Two database technologies to operate, no cross-database joins \\
+\midrule
+RabbitMQ & Durable delivery, simple topic routing, sufficient throughput & Not suited for replay or high-volume streaming (Kafka alternative) \\
+\midrule
+JWT authentication & Stateless verification at gateway, no session DB lookup & Revocation requires Redis blacklist or short TTL with refresh \\
+\midrule
+Redis caching & Sub-millisecond reads, reduces database load significantly & Cache invalidation must be carefully synchronized with writes \\
+\bottomrule
+\end{longtable}
+
+\subsection{Challenges Faced and Solutions Implemented}
+
+\begin{enumerate}
+    \item \textbf{Request body consumption by middleware}: The API Gateway's \texttt{express.json()} parsed request bodies before the proxy middleware could forward them, causing empty POST bodies at downstream services. \textit{Solution}: Removed global body parsing; proxy routes receive the unmodified request stream.
+    \item \textbf{Service startup ordering}: The User Service crashed on startup when PostgreSQL was not yet accepting connections. \textit{Solution}: Added a retry loop with 15 attempts at 3-second intervals in the service initialization code.
+    \item \textbf{Notification email delivery}: The notification consumer stored messages in Redis but did not trigger email delivery. \textit{Solution}: Wired the SMTP \texttt{send\_email} function into the message processing pipeline, with user email resolution via an internal API call to the User Service.
+    \item \textbf{OAuth2 callback redirect}: The Google OAuth2 callback returned raw JSON to the browser instead of redirecting to the React application. \textit{Solution}: Changed the callback handler to issue an HTTP redirect to the frontend URL with the JWT as a query parameter.
+\end{enumerate}
+
+\subsection{Performance Evaluation Results}
+
+\begin{longtable}{@{}p{5cm}p{4cm}p{4cm}@{}}
+\toprule
+\textbf{Operation} & \textbf{Measured Response Time} & \textbf{Target (NFR-02)} \\
+\midrule
+Health check & $<$ 5ms & $<$ 200ms \\
+List events (cached) & $<$ 10ms & $<$ 200ms \\
+Create event & $<$ 50ms & $<$ 200ms \\
+RSVP to event & $<$ 30ms & $<$ 200ms \\
+Dashboard statistics & $<$ 20ms & $<$ 200ms \\
+Full E2E test suite (9 tests) & 160ms total & -- \\
+RabbitMQ message delivery & $<$ 2 seconds & Near real-time \\
+SMTP email delivery & $<$ 5 seconds & Best effort \\
+\bottomrule
+\end{longtable}
+
+All measured response times are well within the non-functional requirement targets defined in Phase 1. The RabbitMQ message pipeline delivers notifications to Redis and triggers email within seconds of the originating event. The system sustained all integration and contract tests with zero failures.
+
+\end{document}

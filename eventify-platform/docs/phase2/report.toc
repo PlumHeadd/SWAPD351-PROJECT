@@ -1,0 +1,28 @@
+\contentsline {section}{\numberline {1}Updated Design Document}{2}{section.1}%
+\contentsline {subsection}{\numberline {1.1}Revised C4 Model}{2}{subsection.1.1}%
+\contentsline {subsection}{\numberline {1.2}Deployment Model}{2}{subsection.1.2}%
+\contentsline {subsection}{\numberline {1.3}Additional ADRs}{2}{subsection.1.3}%
+\contentsline {section}{\numberline {2}Implemented Web Application}{3}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Backend Services}{3}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Containerization (Docker + Docker Compose)}{3}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}CRUD Functionality with API Gateway}{3}{subsection.2.3}%
+\contentsline {subsection}{\numberline {2.4}Caching (Redis)}{4}{subsection.2.4}%
+\contentsline {subsection}{\numberline {2.5}Message Broker (RabbitMQ)}{4}{subsection.2.5}%
+\contentsline {subsection}{\numberline {2.6}Centralized Logging (OpenSearch)}{4}{subsection.2.6}%
+\contentsline {subsection}{\numberline {2.7}Frontend (React with OAuth2)}{4}{subsection.2.7}%
+\contentsline {section}{\numberline {3}Security Implementation}{5}{section.3}%
+\contentsline {subsection}{\numberline {3.1}OAuth2 Authentication (Google)}{5}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Secure API Implementation}{5}{subsection.3.2}%
+\contentsline {section}{\numberline {4}Testing and Quality Assurance}{6}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Integration Tests}{6}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Unit Tests}{6}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Load and Stress Testing (k6)}{6}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Contract Testing}{6}{subsection.4.4}%
+\contentsline {section}{\numberline {5}Deployment, Monitoring, and Observability}{7}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Logging (OpenSearch)}{7}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Application and System Monitoring (Prometheus + Grafana)}{7}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Configured Alerts}{7}{subsection.5.3}%
+\contentsline {section}{\numberline {6}Final Report}{8}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Summary of System Architecture and Trade-offs}{8}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Challenges Faced and Solutions Implemented}{8}{subsection.6.2}%
+\contentsline {subsection}{\numberline {6.3}Performance Evaluation Results}{9}{subsection.6.3}%

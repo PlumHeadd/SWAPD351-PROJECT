@@ -1,0 +1,23 @@
+% ADR-005: Redis for Caching and Session Management
+\subsection{ADR-005: Redis for Caching and Session Management}
+
+\begin{tabular}{p{3cm}p{10cm}}
+\textbf{Status} & Accepted \\
+\textbf{Date} & 2026-03-15 \\
+\textbf{Decision} & Use Redis as the in-memory data store for caching and session management. \\
+\end{tabular}
+
+\textbf{Context}: The system requires fast access to frequently read data (event listings, user sessions) and a shared session store accessible by multiple service instances. Read-heavy operations like event browsing benefit from caching to reduce database load and improve response times.
+
+\textbf{Decision}: Deploy a Redis instance shared across services for:
+\begin{itemize}
+    \item \textbf{Caching}: Cache popular event listings and event details with a TTL of 5 minutes. Cache invalidation occurs on event updates via a write-through strategy.
+    \item \textbf{Session Management}: Store refresh tokens and active session metadata. Sessions expire after 7 days of inactivity.
+    \item \textbf{Rate Limiting}: Store request counters per user with a sliding window of 1 minute.
+\end{itemize}
+
+\textbf{Consequences}:
+\begin{itemize}
+    \item \textit{Positive}: Sub-millisecond read latency. Reduces load on PostgreSQL and MongoDB. Atomic operations for rate limiting counters.
+    \item \textit{Negative}: Additional infrastructure component. Data loss on restart if persistence is not configured (mitigated by using Redis with AOF persistence). Cache invalidation must be carefully managed to avoid stale data.
+\end{itemize}
