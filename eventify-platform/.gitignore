@@ -1,0 +1,28 @@
+node_modules/
+.env
+.env.local
+__pycache__/
+*.pyc
+*.pyo
+dist/
+build/
+coverage/
+.pytest_cache/
+*.log
+
+# OAuth2 credentials (NEVER commit real credentials)
+client_secret*.json
+*.apps.googleusercontent.com.json
+credentials.json
+token.json
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

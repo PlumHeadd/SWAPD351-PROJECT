@@ -1,0 +1,22 @@
+dry-run: false
+hookfiles: './tests/contract/hooks.js'
+language: nodejs
+sandbox: false
+server: null
+server-wait: 3
+reporter: []
+output: []
+header: []
+sorted: false
+user: null
+inline-errors: false
+details: false
+method: []
+color: true
+level: info
+timestamp: false
+silent: false
+path: []
+
+blueprint: docs/api-specs/event-service-api.yaml
+endpoint: 'http://localhost:3000'
