@@ -13,11 +13,13 @@ A scalable event management web application built with microservices architectur
 - **Event Service** (Python/Flask) — CRUD events, RSVPs, Redis caching
 - **Chat Service** (Node.js/Socket.io) — real-time messaging per event
 - **Notification Service** (Python/Flask) — RabbitMQ consumer, email/push
+- **Analytics Service** (Go) — event tracking, real-time insights, Prometheus metrics
 
 ## Tech Stack
 
 | Component | Technology |
 |-----------|-----------|
+| Backend Services | Node.js (API Gateway, User, Chat), Python (Events, Notifications), Go (Analytics) |
 | Databases | PostgreSQL (users), MongoDB (events/chat) |
 | Cache | Redis |
 | Message Broker | RabbitMQ |
@@ -39,6 +41,7 @@ docker-compose up --build
 # 3. Access
 # Frontend:     http://localhost:3080
 # API Gateway:  http://localhost:3000
+# Analytics:    http://localhost:5003
 # RabbitMQ UI:  http://localhost:15672
 # Grafana:      http://localhost:3030
 # OpenSearch:   http://localhost:9200
@@ -75,7 +78,8 @@ eventify-platform/
 │   ├── user-service/    # Node.js
 │   ├── event-service/   # Python/Flask
 │   ├── chat-service/    # Node.js/Socket.io
-│   └── notification-service/ # Python/Flask
+│   ├── notification-service/ # Python/Flask
+│   └── analytics-service/    # Go
 ├── frontend/            # React
 ├── monitoring/          # Prometheus + Grafana configs
 └── tests/

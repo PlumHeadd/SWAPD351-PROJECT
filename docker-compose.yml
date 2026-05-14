@@ -12,14 +12,22 @@ services:
       - EVENT_SERVICE_URL=http://event-service:5001
       - CHAT_SERVICE_URL=http://chat-service:3002
       - NOTIFICATION_SERVICE_URL=http://notification-service:5002
+      - ANALYTICS_SERVICE_URL=http://analytics-service:5003
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=eventify_jwt_secret_key_2026
+      - LOG_LEVEL=info
     depends_on:
       - redis
       - user-service
       - event-service
     networks:
       - eventify-net
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+        labels: 'service=api-gateway,environment=dev'
 
   # --- User Service (Node.js) ---
   user-service:
@@ -34,11 +42,18 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-placeholder}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-placeholder}
       - GOOGLE_CALLBACK_URL=http://localhost:3000/api/auth/google/callback
+      - LOG_LEVEL=info
     depends_on:
       - postgres
       - redis
     networks:
       - eventify-net
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+        labels: 'service=user-service,environment=dev'
 
   # --- Event Service (Python/Flask) ---
   event-service:
@@ -51,12 +66,19 @@ services:
       - REDIS_URL=redis://redis:6379
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
       - JWT_SECRET=eventify_jwt_secret_key_2026
+      - LOG_LEVEL=info
     depends_on:
       - mongodb
       - redis
       - rabbitmq
     networks:
       - eventify-net
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+        labels: 'service=event-service,environment=dev'
 
   # --- Chat Service (Node.js/Socket.io) ---
   chat-service:
@@ -68,11 +90,18 @@ services:
       - MONGO_URI=mongodb://mongodb:27017/eventify_chat
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
       - JWT_SECRET=eventify_jwt_secret_key_2026
+      - LOG_LEVEL=info
     depends_on:
       - mongodb
       - rabbitmq
     networks:
       - eventify-net
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+        labels: 'service=chat-service,environment=dev'
 
   # --- Notification Service (Python/Flask) ---
   notification-service:
@@ -88,10 +117,40 @@ services:
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASS=${SMTP_PASS:-}
+      - LOG_LEVEL=info
     depends_on:
       - rabbitmq
       - redis
       - user-service
+    networks:
+      - eventify-net
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+        labels: 'service=notification-service,environment=dev'
+
+  # --- Analytics Service (Go) ---
+  analytics-service:
+    build: ./services/analytics-service
+    ports:
+      - "5003:5003"
+    environment:
+      - PORT=5003
+      - REDIS_URL=redis://redis:6379
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - JWT_SECRET=eventify_jwt_secret_key_2026
+      - LOG_LEVEL=info
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+        labels: 'service=analytics-service,environment=dev'
+    depends_on:
+      - redis
+      - rabbitmq
     networks:
       - eventify-net
 
@@ -206,6 +265,21 @@ services:
       - prometheus
     networks:
       - eventify-net
+
+  # --- Filebeat (Log Shipping) ---
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:7.15.0
+    volumes:
+      - ./services/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: filebeat -e -strict.perms=false
+    depends_on:
+      - opensearch
+    networks:
+      - eventify-net
+    environment:
+      - ELASTIC_HOSTS=opensearch:9200
 
 volumes:
   postgres_data:
