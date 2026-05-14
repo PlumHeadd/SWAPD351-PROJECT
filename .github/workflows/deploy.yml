@@ -1,0 +1,404 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: eventifyacr.azurecr.io
+  DOCKER_BUILDKIT: 1
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Test & Quality Checks
+    
+    strategy:
+      matrix:
+        service: 
+          - api-gateway
+          - user-service
+          - event-service
+          - chat-service
+          - notification-service
+          - analytics-service
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Node.js (for Node services)
+        if: matrix.service != 'event-service' && matrix.service != 'notification-service' && matrix.service != 'analytics-service'
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: services/${{ matrix.service }}/package-lock.json
+      
+      - name: Set up Python (for Python services)
+        if: matrix.service == 'event-service' || matrix.service == 'notification-service'
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Set up Go (for Go services)
+        if: matrix.service == 'analytics-service'
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+          cache: 'go'
+          cache-dependency-path: services/analytics-service/go.sum
+      
+      - name: Install dependencies (Node)
+        if: matrix.service != 'event-service' && matrix.service != 'notification-service' && matrix.service != 'analytics-service'
+        run: |
+          cd services/${{ matrix.service }}
+          npm ci
+      
+      - name: Install dependencies (Python)
+        if: matrix.service == 'event-service' || matrix.service == 'notification-service'
+        run: |
+          cd services/${{ matrix.service }}
+          pip install -r requirements.txt
+      
+      - name: Install dependencies (Go)
+        if: matrix.service == 'analytics-service'
+        run: |
+          cd services/${{ matrix.service }}
+          go mod download
+      
+      - name: Lint code (Node)
+        if: matrix.service != 'event-service' && matrix.service != 'notification-service' && matrix.service != 'analytics-service'
+        run: |
+          cd services/${{ matrix.service }}
+          npm run lint --if-present || npx eslint . --fix
+      
+      - name: Lint code (Python)
+        if: matrix.service == 'event-service' || matrix.service == 'notification-service'
+        run: |
+          cd services/${{ matrix.service }}
+          pip install pylint
+          pylint *.py --disable=all --enable=E,F || true
+      
+      - name: Run unit tests (Node)
+        if: matrix.service != 'event-service' && matrix.service != 'notification-service' && matrix.service != 'analytics-service'
+        run: |
+          cd services/${{ matrix.service }}
+          npm test -- --coverage
+      
+      - name: Run unit tests (Python)
+        if: matrix.service == 'event-service' || matrix.service == 'notification-service'
+        run: |
+          cd services/${{ matrix.service }}
+          pytest --cov=. --cov-report=xml
+      
+      - name: Run unit tests (Go)
+        if: matrix.service == 'analytics-service'
+        run: |
+          cd services/${{ matrix.service }}
+          go test -v -coverprofile=coverage.out ./...
+      
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        if: always()
+        with:
+          files: ./services/${{ matrix.service }}/coverage.out,./services/${{ matrix.service }}/coverage.xml
+          flags: ${{ matrix.service }}
+      
+      - name: Security scan (npm audit)
+        if: matrix.service != 'event-service' && matrix.service != 'notification-service' && matrix.service != 'analytics-service'
+        run: |
+          cd services/${{ matrix.service }}
+          npm audit --audit-level=moderate || true
+      
+      - name: Security scan (Bandit - Python)
+        if: matrix.service == 'event-service' || matrix.service == 'notification-service'
+        run: |
+          cd services/${{ matrix.service }}
+          pip install bandit
+          bandit -r . -f json -o bandit-report.json || true
+      
+      - name: Security scan (gosec - Go)
+        if: matrix.service == 'analytics-service'
+        run: |
+          cd services/${{ matrix.service }}
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec ./... || true
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    name: Integration Tests
+    needs: test
+    if: github.event_name == 'push'
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: eventify_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      mongodb:
+        image: mongo:6.0
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 27017:27017
+      
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install test dependencies
+        run: |
+          pip install pytest requests flask pymongo psycopg2-binary redis
+      
+      - name: Run integration tests
+        env:
+          DATABASE_URL: postgresql://postgres:testpass@localhost:5432/eventify_test
+          MONGO_URI: mongodb://localhost:27017/eventify_test
+          REDIS_URL: redis://localhost:6379
+        run: |
+          cd tests/integration
+          pytest -v --tb=short
+
+  load-tests:
+    runs-on: ubuntu-latest
+    name: Load Tests
+    needs: test
+    if: github.event_name == 'push'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up k6
+        run: |
+          sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6-stable.list
+          sudo apt-get update
+          sudo apt-get install k6
+      
+      - name: Start test services
+        run: docker-compose -f docker-compose.test.yml up -d
+      
+      - name: Wait for services to be ready
+        run: sleep 10
+      
+      - name: Run load tests
+        run: |
+          k6 run tests/load/load_test.js \
+            --vus 100 \
+            --duration 5m \
+            --out json=test-results.json
+      
+      - name: Upload load test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: load-test-results
+          path: test-results.json
+      
+      - name: Stop test services
+        run: docker-compose -f docker-compose.test.yml down
+
+  build:
+    runs-on: ubuntu-latest
+    name: Build & Push Docker Images
+    needs: [test, integration-tests]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    strategy:
+      matrix:
+        service:
+          - api-gateway
+          - user-service
+          - event-service
+          - chat-service
+          - notification-service
+          - analytics-service
+          - frontend
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Login to Azure Container Registry
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ env.REGISTRY }}
+          username: ${{ secrets.AZURE_REGISTRY_USERNAME }}
+          password: ${{ secrets.AZURE_REGISTRY_PASSWORD }}
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      
+      - name: Build and push image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./services/${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ matrix.service }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ matrix.service }}:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ matrix.service }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ matrix.service }}:buildcache,mode=max
+
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy to AKS
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group eventify-prod-rg \
+            --name eventify-aks \
+            --admin
+      
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+      
+      - name: Create namespace
+        run: kubectl create namespace eventify --dry-run=client -o yaml | kubectl apply -f -
+      
+      - name: Update image references in manifests
+        run: |
+          for service in api-gateway user-service event-service chat-service notification-service analytics-service frontend; do
+            sed -i "s|IMAGE_PLACEHOLDER|${{ env.REGISTRY }}/$service:${{ github.sha }}|g" k8s/manifests/*-$service*.yaml
+          done
+      
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply -f k8s/manifests/ -n eventify
+      
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/api-gateway -n eventify --timeout=5m
+          kubectl rollout status deployment/event-service -n eventify --timeout=5m
+          kubectl rollout status deployment/chat-service -n eventify --timeout=5m
+      
+      - name: Get service endpoints
+        run: |
+          echo "API Gateway:" $(kubectl get svc api-gateway -n eventify -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+  smoke-tests:
+    runs-on: ubuntu-latest
+    name: Smoke Tests (Post-Deployment)
+    needs: deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      - name: Install dependencies
+        run: |
+          cd tests/smoke
+          npm install
+      
+      - name: Wait for deployment
+        run: sleep 30
+      
+      - name: Run smoke tests
+        env:
+          API_URL: https://api.eventify.com
+        run: |
+          cd tests/smoke
+          npm test
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: smoke-test-results
+          path: tests/smoke/results.json
+
+  notifications:
+    runs-on: ubuntu-latest
+    name: Send Notifications
+    needs: [test, build, deploy]
+    if: always()
+    
+    steps:
+      - name: Determine status
+        id: status
+        run: |
+          if [ "${{ needs.deploy.result }}" == "success" ]; then
+            echo "::set-output name=status::success"
+            echo "::set-output name=message::✅ Deployment successful!"
+          else
+            echo "::set-output name=status::failure"
+            echo "::set-output name=message::❌ Deployment failed!"
+          fi
+      
+      - name: Send Slack notification
+        uses: 8398a7/action-slack@v3
+        if: always()
+        with:
+          status: ${{ steps.status.outputs.status }}
+          text: ${{ steps.status.outputs.message }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          fields: |
+            repo
+            message
+            commit
+            author
+      
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const status = "${{ steps.status.outputs.status }}" === 'success' ? '✅' : '❌';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `${status} All tests and builds completed! See workflow run for details.`
+            });

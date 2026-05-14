@@ -1,0 +1,34 @@
+filebeat.inputs:
+- type: container
+  enabled: true
+  paths:
+    - '/var/lib/docker/containers/*/*.log'
+  json.message_key: log
+  json.keys_under_root: true
+  json.add_error_key: true
+
+processors:
+  - add_kubernetes_metadata:
+      in_cluster: false
+  - add_docker_metadata:
+      host: 'unix:///var/run/docker.sock'
+  - add_fields:
+      target: ''
+      fields:
+        environment: production
+        service: eventify
+
+output.elasticsearch:
+  hosts: ['opensearch:9200']
+  index: 'eventify-%{+yyyy.MM.dd}'
+  protocol: 'http'
+  username: 'admin'
+  password: 'admin'
+
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name: filebeat
+  keepfiles: 7
+  permissions: 0640
